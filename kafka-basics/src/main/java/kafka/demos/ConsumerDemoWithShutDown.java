@@ -3,6 +3,7 @@ package kafka.demos;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,20 +38,47 @@ public class ConsumerDemoWithShutDown {
         //create consumer
         KafkaConsumer<String,String> consumer = new KafkaConsumer<>(properties);
 
-        //subscribe to a topic
-        consumer.subscribe(Arrays.asList(topic)); //Arrays.asList(topic,topic2,topic3,...,topicN)
+        //get a reference to main thread
+        final Thread mainThread = Thread.currentThread();
 
-        //poll for data
-        while (true) {
-            log.info("Polling for data...");
-            ConsumerRecords<String,String> records = consumer.poll(Duration.ofMillis(1000)); //watiting up to 1 sec to recieve data
-            for (ConsumerRecord<String,String> record : records) {
-                log.info("Key: " + record.key() +
-                        " | Value: " + record.value() +
-                        " | Partition: " + record.partition() +
-                        " | Offset: " + record.offset());
+        //adding shutdown hook
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+           public void run(){
+               log.info("Detected shutdown hook, exiting by calling consumer.wakeup()");
+               consumer.wakeup();
+
+               // join the main thread to allow the execution of the code in the main thread
+               try {
+                   mainThread.join();
+               } catch (InterruptedException e) {
+                   throw new RuntimeException(e);
+               }
+           }
+        });
+
+        try {
+            //subscribe to a topic
+            consumer.subscribe(Arrays.asList(topic)); //Arrays.asList(topic,topic2,topic3,...,topicN)
+
+            //poll for data
+            while (true) {
+                log.info("Polling for data...");
+                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000)); //watiting up to 1 sec to recieve data
+                for (ConsumerRecord<String, String> record : records) {
+                    log.info("Key: " + record.key() +
+                            " | Value: " + record.value() +
+                            " | Partition: " + record.partition() +
+                            " | Offset: " + record.offset());
+                }
+
             }
-
+        }catch (WakeupException e){
+            log.info("Received shutdown signal");
+        }catch (Exception e){
+            log.error("Unexpected exception",e);
+        }finally {
+            consumer.close(); // close consumer and commit offsets
+            log.info("Closing ConsumerDemo");
         }
 
     }
