@@ -11,6 +11,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.opensearch.action.bulk.BulkRequest;
 import org.opensearch.action.bulk.BulkResponse;
@@ -28,7 +29,9 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Properties;
-import java.util.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 
 public class OpenSearchConsumer {
 
@@ -88,13 +91,31 @@ public class OpenSearchConsumer {
     }
 
     public static void main(String[] args) throws IOException {
-        Logger log = Logger.getLogger(OpenSearchConsumer.class.getName());
+        Logger log = LoggerFactory.getLogger(OpenSearchConsumer.class.getName());
 
         // create opensearch client
         RestHighLevelClient openSearchClient = createOpenSearchClient();
 
         //create kafka client
         KafkaConsumer<String,String> consumer = createKafkaConsumer();
+
+        //get a reference to main thread
+        final Thread mainThread = Thread.currentThread();
+
+        //adding shutdown hook
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            public void run(){
+                log.info("Detected shutdown hook, exiting by calling consumer.wakeup()");
+                consumer.wakeup();
+
+                // join the main thread to allow the execution of the code in the main thread
+                try {
+                    mainThread.join();
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        });
 
         //create index on opensearch if it doesnt exist
         try(openSearchClient; consumer){
@@ -153,10 +174,15 @@ public class OpenSearchConsumer {
 
             }
 
+        }catch (WakeupException e){
+            log.info("Received shutdown signal");
+        }catch (Exception e){
+            log.error("Unexpected exception",e);
+        }finally {
+            consumer.close(); // close consumer and commit offsets
+            openSearchClient.close();
+            log.info("Closing ConsumerDemo");
         }
-
-        //close
-        //openSearchClient.close();
 
     }
 }
