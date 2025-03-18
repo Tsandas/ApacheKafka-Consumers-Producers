@@ -19,7 +19,7 @@ public class ConsumerDemoWithShutDown {
     public static void main(String[] args) {
         log.info("I am a Kafka Consumer!");
         String groupId = "my-java-application";
-        String topic = "demo_java";
+        String topic = "wikimedia.recentchange";
 
         Properties properties = new Properties();
         //Running on docker compose

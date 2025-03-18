@@ -155,9 +155,6 @@ public class OpenSearchConsumer {
 
         }
 
-
-        //main logic
-
         //close
         //openSearchClient.close();
 
